@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "foundry-guardrails": {
+      "command": "uv",
+      "args": [
+        "run",
+        "python",
+        "run_guardrails.py"
+      ]
+    }
+  }
+}

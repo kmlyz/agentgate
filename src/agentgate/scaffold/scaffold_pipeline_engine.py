@@ -1,0 +1,231 @@
+"""Production Pipeline and Scaffolding Engine for AgentGate.
+
+Generates Cloud Run and Google Agents CLI compliant agent projects, embeds
+runtime guardrails, and enforces a security Quality Gate before release.
+"""
+
+import re
+import sys
+from pathlib import Path
+from typing import Any
+
+# Ensure src directory is on sys.path for direct CLI/script execution
+_src_dir = Path(__file__).resolve().parent.parent.parent
+if str(_src_dir) not in sys.path:
+    sys.path.insert(0, str(_src_dir))
+
+from evals.eval_runner_adversarial import AdversarialEvalRunner
+
+
+class QualityGateError(Exception):
+    """Raised when an agent project fails the mandatory 100% security defense threshold."""
+
+
+
+class EnginePipelineScaffold:
+    """Production scaffolding engine for Cloud Run & Agents CLI deployments."""
+
+    NAME_REGEX = re.compile(r"^[a-z0-9][a-z0-9\-]{0,25}$")
+
+    def __init__(
+        self,
+        eval_runner: AdversarialEvalRunner | None = None,
+    ) -> None:
+        self.eval_runner = eval_runner
+
+    def validate_agent_name(self, name: str) -> None:
+        """Validate agent project identifier against Cloud Run & Agents CLI rules."""
+        if not self.NAME_REGEX.match(name):
+            raise ValueError(
+                f"Invalid agent name '{name}'. Must be 1-26 characters, "
+                f"lowercase alphanumeric and hyphens only, starting with alphanumeric."
+            )
+
+    def run_quality_gate(
+        self, evalset_path: Path | str | None = None
+    ) -> dict[str, Any]:
+        """Execute adversarial evaluation and enforce 100% defense threshold."""
+        runner = self.eval_runner or AdversarialEvalRunner(evalset_path=evalset_path)
+        report = runner.execute_eval_adversarial_suite()
+
+        overall_score = report.get("overall_score", 0.0)
+        posture = report.get("security_posture", "UNKNOWN")
+
+        if overall_score < 1.0 or posture != "SECURE":
+            failed_count = report.get("failed_cases", 0)
+            raise QualityGateError(
+                f"QUALITY_GATE_BLOCKED: Security score is {overall_score * 100:.1f}%. "
+                f"Failed cases: {failed_count}. 100% defense is strictly required."
+            )
+
+        return {
+            "status": "passed",
+            "overall_score": overall_score,
+            "security_posture": posture,
+            "total_cases": report.get("total_cases", 0),
+        }
+
+    def render_dockerfile(self, agent_name: str, port: int = 8080) -> str:
+        """Render production-ready Cloud Run Dockerfile."""
+        return f"""# Cloud Run Production Container for {agent_name}
+FROM python:3.12-slim
+
+WORKDIR /app
+ENV PYTHONUNBUFFERED=1
+ENV PORT={port}
+
+# Install uv for high-performance dependency management
+RUN pip install --no-cache-dir uv
+
+# Copy configuration and install dependencies
+COPY pyproject.toml ./
+RUN uv pip install --system --no-cache -r pyproject.toml || true
+
+# Copy agent application code
+COPY . .
+
+EXPOSE {port}
+
+# Cloud Run execution entrypoint
+CMD ["uv", "run", "python", "-m", "google.adk.server", "--host", "0.0.0.0", "--port", "{port}", "app"]
+"""
+
+    def render_manifest(
+        self,
+        agent_name: str,
+        port: int = 8080,
+        region: str = "us-central1",
+    ) -> str:
+        """Render Google Agents CLI & Cloud Run manifest YAML."""
+        return f"""manifest_version: "1.0"
+name: "{agent_name}"
+framework: "adk"
+runtime_target: "cloud_run"
+entrypoint: "app.agent:root_agent"
+guidance_filename: "GEMINI.md"
+
+guardrails:
+  runtime_callback: "agentgate.runtime.RuntimeGuardrailToolCallback"
+  enforce_strict_schemas: true
+  approval_gate: true
+
+cloud_run:
+  service_name: "{agent_name}"
+  region: "{region}"
+  port: {port}
+  scaling:
+    min_instances: 0
+    max_instances: 10
+"""
+
+    def render_agent_entrypoint(self, agent_name: str) -> str:
+        """Render standard app/agent.py with embedded RuntimeGuardrailToolCallback."""
+        return f'''"""Google ADK Agent entrypoint with embedded AgentGate Guardrail Callback."""
+
+from google.adk.agents import Agent
+from agentgate.runtime import RuntimeGuardrailToolCallback
+
+# Embedded universal runtime guardrail callback
+guardrail_callback = RuntimeGuardrailToolCallback()
+
+root_agent = Agent(
+    name="{agent_name}",
+    model="gemini-3.8-flash",
+    description="Autonomous agent protected by AgentGate deterministic guardrails.",
+    instruction="You are a helpful assistant. All mutating operations require human approval.",
+    before_tool_callback=guardrail_callback.before_tool_callback,
+)
+'''
+
+    def render_agent_init(self) -> str:
+        """Render app/__init__.py."""
+        return 'from . import agent\n\n__all__ = ["agent"]\n'
+
+    def render_pyproject(self, agent_name: str) -> str:
+        """Render scaffold pyproject.toml."""
+        return f"""[project]
+name = "{agent_name}"
+version = "0.1.0"
+description = "Autonomous Agent generated by AgentGate"
+requires-python = ">=3.12"
+dependencies = [
+    "google-adk>=2.0.0",
+    "google-genai>=1.0.0",
+    "pydantic>=2.10.0",
+]
+"""
+
+    def render_env_example(self, port: int = 8080) -> str:
+        """Render environment template."""
+        return f"""GEMINI_API_KEY=
+PORT={port}
+"""
+
+    def create_agent(
+        self,
+        agent_name: str,
+        target_dir: Path | str,
+        enforce_quality_gate: bool = True,
+        port: int = 8080,
+        region: str = "us-central1",
+    ) -> dict[str, Any]:
+        """Scaffold complete Cloud Run & Agents CLI agent project."""
+        self.validate_agent_name(agent_name)
+
+        qg_result: dict[str, Any] | None = None
+        if enforce_quality_gate:
+            qg_result = self.run_quality_gate()
+
+        root = Path(target_dir)
+        app_dir = root / "app"
+        app_dir.mkdir(parents=True, exist_ok=True)
+
+        generated_files: list[str] = []
+
+        def _write(rel_path: str, content: str) -> None:
+            dest = root / rel_path
+            dest.write_text(content, encoding="utf-8")
+            generated_files.append(rel_path)
+
+        # 1. Write agent code and entrypoints
+        _write("app/__init__.py", self.render_agent_init())
+        _write("app/agent.py", self.render_agent_entrypoint(agent_name))
+
+        # 2. Write Cloud Run & Agents CLI deployment manifests
+        _write("Dockerfile", self.render_dockerfile(agent_name, port=port))
+        _write(
+            "agents-cli-manifest.yaml",
+            self.render_manifest(agent_name, port=port, region=region),
+        )
+
+        # 3. Write project configuration
+        _write("pyproject.toml", self.render_pyproject(agent_name))
+        _write(".env.example", self.render_env_example(port=port))
+
+        return {
+            "status": "scaffolded",
+            "agent_name": agent_name,
+            "target_dir": str(root),
+            "generated_files": generated_files,
+            "quality_gate": qg_result or {"status": "skipped"},
+        }
+
+
+def execute_scaffold_pipeline_create(
+    agent_name: str,
+    target_dir: Path | str,
+    enforce_quality_gate: bool = True,
+) -> dict[str, Any]:
+    """Module-level convenience function to scaffold agent project."""
+    engine = EnginePipelineScaffold()
+    return engine.create_agent(
+        agent_name, target_dir, enforce_quality_gate=enforce_quality_gate
+    )
+
+
+def verify_scaffold_quality_gate(
+    evalset_path: Path | str | None = None,
+) -> dict[str, Any]:
+    """Module-level convenience function to verify security quality gate."""
+    engine = EnginePipelineScaffold()
+    return engine.run_quality_gate(evalset_path=evalset_path)

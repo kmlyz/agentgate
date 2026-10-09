@@ -1,0 +1,16 @@
+services:
+  agentgate-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: agentgate-mcp
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - MCP_TRANSPORT=sse
+      - PORT=8000
+      - HOST=0.0.0.0
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    volumes:
+      - ./.tmp:/app/.tmp

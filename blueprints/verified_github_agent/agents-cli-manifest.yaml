@@ -1,0 +1,23 @@
+manifest_version: "1.0"
+name: "verified-github-agent"
+framework: "adk"
+runtime_target: "cloud_run"
+entrypoint: "blueprints.verified_github_agent.github_agent_runtime:root_agent"
+guidance_filename: "GEMINI.md"
+
+model:
+  name: "gemini-3.8-flash"
+  temperature: 0.1
+
+guardrails:
+  runtime_callback: "agentgate.runtime.RuntimeGuardrailToolCallback"
+  enforce_strict_schemas: true
+  approval_gate: true
+
+cloud_run:
+  service_name: "verified-github-agent"
+  region: "us-central1"
+  port: 8080
+  scaling:
+    min_instances: 0
+    max_instances: 10
