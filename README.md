@@ -1,10 +1,10 @@
 # AgentGate
 
-Deterministic execution gate and audit ledger for autonomous agents.
+Deterministic execution gate and audit ledger for LLM tool calls.
 
-## Scope
+## Overview
 
-AgentGate intercepts tool execution calls from large language models, validating parameters against strict schemas and queueing mutations into an isolated `PENDING_APPROVAL` gate state. Direct host or datastore mutations are blocked until cryptographically verified operator approval is registered.
+AgentGate intercepts LLM tool calls, validates parameters against strict schemas, and stages mutations into a `PENDING_APPROVAL` state. Direct host or datastore operations are blocked until operator approval is recorded.
 
 ## Quickstart
 
@@ -17,7 +17,7 @@ proposal = CommitProposal(branch="main", commit_type=CommitType.FEAT, scope="cor
 record: ProposalRecord = gate.stage(proposal)
 
 gate.approve(record.proposal_id)
-# State transitions: PENDING_APPROVAL -> APPROVED -> EXECUTED
+# Lifecycle: PENDING_APPROVAL -> APPROVED -> EXECUTED
 ```
 
 ## CLI Usage
@@ -28,20 +28,19 @@ gate approve <id>
 gate execute <id>
 ```
 
-## Ecosystem & Compatibility
+## Ecosystem
 
-AgentGate integrates directly with the modern autonomous agent stack:
-- [Google Agent Development Kit (ADK)](https://adk.dev/): First-class runtime integration via `before_tool_callback`.
-- [Model Context Protocol (MCP)](https://modelcontextprotocol.io): Native FastMCP stdio server exposing proposal-and-gate tools.
-- [Pydantic v2](https://docs.pydantic.dev): Deterministic boundary validation with `extra="forbid"` schemas and discriminated unions.
+- [Google Agent Development Kit (ADK)](https://adk.dev/): Interception via `before_tool_callback`.
+- [Model Context Protocol (MCP)](https://modelcontextprotocol.io): FastMCP stdio server for proposal staging and execution.
+- [Pydantic v2](https://docs.pydantic.dev): Parameter validation via `extra="forbid"` models and discriminated unions.
 
-## Invariants
+## Core Invariants
 
-- **Strict Schema Enforcement:** All payload models inherit from Pydantic v2 `BaseModel` with `extra="forbid"`. Undefined or unvalidated parameters raise validation errors prior to staging.
-- **State Machine Transitions:** State flow enforces `PENDING_APPROVAL` $\rightarrow$ `APPROVED` $\rightarrow$ `EXECUTED` (or `REJECTED`). Unapproved execution attempts abort immediately with an unhandled `ValueError`.
-- **$\mathcal{O}(N)$ Lexical SQL Parsing:** Migration payloads are validated using an $\mathcal{O}(N)$ deterministic lexical state machine, isolating literals and multi-line comments without external engine execution.
-- **Cryptographic Audit Ledger:** State mutations append SHA-256 hash-chained blocks (`GENESIS` $\rightarrow$ `block_n`), maintaining tamper-evident execution histories.
-- **Test Suite Verification:** 230 unit, contract, and adversarial security tests execute with zero failures and zero warnings.
+- **Schema Enforcement:** Payload models inherit from Pydantic v2 `BaseModel` with `extra="forbid"`. Unrecognized parameters fail validation prior to staging.
+- **State Machine:** Transitions enforce `PENDING_APPROVAL` $\rightarrow$ `APPROVED` $\rightarrow$ `EXECUTED` (or `REJECTED`). Unapproved execution attempts abort with `ValueError`.
+- **Lexical SQL Scanner:** $\mathcal{O}(N)$ single-pass parser analyzes migration statements and isolates literals/comments without database execution.
+- **Audit Ledger:** SHA-256 hash-chained blocks (`GENESIS` $\rightarrow$ `block_n`) record all state mutations.
+- **Verification:** 230 unit, contract, and adversarial security tests.
 
 ## AgentGate Pro
 
