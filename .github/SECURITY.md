@@ -14,8 +14,7 @@ Only the latest release line receives security updates and patches.
 Do not report security vulnerabilities through public GitHub issues, discussions, or pull requests.
 
 To report a vulnerability:
-1. Use GitHub Private Vulnerability Reporting on this repository (`Security` tab $\rightarrow$ `Advisories` $\rightarrow$ `Report a vulnerability`).
-2. Alternatively, contact the maintainer (`kmlyz`) directly via private disclosure channels or send an encrypted disclosure report to `security@agentgate.dev`.
+Use GitHub Private Vulnerability Reporting directly on this repository (`Security` tab $\rightarrow$ `Advisories` $\rightarrow$ `Report a vulnerability`). This creates a private, confidential advisory accessible only to the maintainers.
 
 ### Report Contents
 
