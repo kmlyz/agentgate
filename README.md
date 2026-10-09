@@ -28,6 +28,13 @@ gate approve <id>
 gate execute <id>
 ```
 
+## Ecosystem & Compatibility
+
+AgentGate integrates directly with the modern autonomous agent stack:
+- [Google Agent Development Kit (ADK)](https://github.com/google/agent-development-kit): First-class runtime integration via `before_tool_callback`.
+- [Model Context Protocol (MCP)](https://modelcontextprotocol.io): Native FastMCP stdio server exposing proposal-and-gate tools.
+- [Pydantic v2](https://docs.pydantic.dev): Deterministic boundary validation with `extra="forbid"` schemas and discriminated unions.
+
 ## Invariants
 
 - **Strict Schema Enforcement:** All payload models inherit from Pydantic v2 `BaseModel` with `extra="forbid"`. Undefined or unvalidated parameters raise validation errors prior to staging.
