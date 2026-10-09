@@ -57,3 +57,6 @@ dist/
 agentgate-pro/
 /agentgate-pro/
 
+# Local Agent Tooling & Customizations
+.agents/
+/.agents/
