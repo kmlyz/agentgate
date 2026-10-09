@@ -1,7 +1,7 @@
 [project]
 name = "agentgate"
 version = "0.1.0"
-description = "Deterministic Guardrails & Human-in-the-Loop Gate for Autonomous AI Agents"
+description = "Deterministic execution gate and audit ledger for LLM tool calls"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

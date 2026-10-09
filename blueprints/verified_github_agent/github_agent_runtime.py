@@ -22,7 +22,7 @@ from blueprints.verified_github_agent.github_agent_tools import (
 
 
 class RuntimeAgentGithub:
-    """Production runtime factory and wrapper for Verified GitHub Agent."""
+    """Runtime factory and wrapper for Verified GitHub Agent."""
 
     DEFAULT_MODEL = "gemini-3.8-flash"
     DEFAULT_AGENT_NAME = "verified_github_agent"
@@ -56,7 +56,7 @@ class RuntimeAgentGithub:
             name=self.agent_name,
             model=self.model,
             description=(
-                "AgentGate Pro autonomous Git/GitHub development agent protected by "
+                "AgentGate Pro Git/GitHub development assistant protected by "
                 "deterministic guardrails and ApprovalGate human authorization."
             ),
             instruction=self.DEFAULT_INSTRUCTION,

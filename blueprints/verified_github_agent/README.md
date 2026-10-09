@@ -1,8 +1,8 @@
 # Verified GitHub Agent Blueprint
 
-Production-grade autonomous development agent with deterministic Git/GitHub guardrails and Human-in-the-Loop (HITL) approval gates.
+Deterministic Git and GitHub execution guardrails with Human-in-the-Loop (HITL) approval gates.
 
-Prevents probabilistic LLM agents from issuing arbitrary commits, unauthorized branch mutations, or malformed pull requests by binding all side-effecting operations to strictly-typed Pydantic v2 schemas and the `ApprovalGate` state machine.
+Intercepts LLM tool calls to prevent arbitrary commits, unauthorized branch mutations, or malformed pull requests by binding all side-effecting operations to strictly-typed Pydantic v2 schemas and the `ApprovalGate` state machine.
 
 ---
 
@@ -137,7 +137,7 @@ for prop in proposals:
 
 ### Running with Google ADK `root_agent`
 
-The blueprint exports a production-configured `root_agent` connected directly to the AgentGate `RuntimeGuardrailToolCallback`:
+The blueprint exports a configured `root_agent` connected directly to the AgentGate `RuntimeGuardrailToolCallback`:
 
 ```python
 from blueprints.verified_github_agent import root_agent

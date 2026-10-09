@@ -87,7 +87,7 @@ class TaskSpecification(BaseModel):
 
 
 class VerifiedGitHubAgent:
-    """Production-grade agent orchestrating verified Git and GitHub lifecycle.
+    """Agent orchestrating verified Git and GitHub lifecycle.
 
     Transforms a structured TaskSpecification into a 3-stage proposal pipeline:
       Stage 1: BranchProposal -> PENDING_APPROVAL

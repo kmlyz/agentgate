@@ -64,7 +64,7 @@ def _resolve_tool_name(tool: Any) -> str:
 class RuntimeGuardrailToolCallback:
     """ADK 2.0 runtime guardrail interceptor and approval gatekeeper.
 
-    Designed for seamless use with Google ADK `before_tool_callback`.
+    Configured for use with Google ADK `before_tool_callback`.
     Returning a dictionary instructs ADK to skip tool execution and feed
     the dictionary directly back to the model as the deterministic outcome.
     Returning None allows benign / read-only tools to execute normally.
