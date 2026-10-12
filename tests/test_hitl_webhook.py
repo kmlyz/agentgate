@@ -32,15 +32,15 @@ class TestHitlSchemas:
     """Validate strict Pydantic v2 schemas and extra='forbid' constraint on webhook models."""
 
     def test_slack_user_valid(self) -> None:
-        user = SlackUser(id="U0123456789", username="kemal.security")
+        user = SlackUser(id="U0123456789", username="operator.security")
         assert user.id == "U0123456789"
-        assert user.username == "kemal.security"
+        assert user.username == "operator.security"
 
     def test_slack_user_extra_fields_forbidden(self) -> None:
         with pytest.raises(ValidationError):
             SlackUser(
                 id="U0123456789",
-                username="kemal",
+                username="operator",
                 unauthorized_token="secret_token",
             )
 
