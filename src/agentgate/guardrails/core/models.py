@@ -116,6 +116,20 @@ class ProposalValidationResult(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class SignedApprovalToken(BaseModel):
+    """Cryptographically signed single-use approval token."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    proposal_id: str
+    payload_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    state_fingerprint: str = Field(pattern=r"^[a-f0-9]{40,64}$")
+    nonce: str
+    issued_at: float
+    expires_at: float
+    signature: str
+
+
 class ProposalRecord(BaseModel):
     """Universal registry record stored in the ApprovalGate state machine."""
 
@@ -124,6 +138,12 @@ class ProposalRecord(BaseModel):
     rendered_message: str
     status: ProposalStatus = ProposalStatus.PENDING_APPROVAL
     rejection_reason: str | None = None
+    payload_sha256: str | None = None
+    state_fingerprint: str | None = None
+    approval_token: str | None = None
+    expires_at: float | None = None
+    consumed_at: float | None = None
+    nonce: str | None = None
 
     @field_validator("proposal", mode="before")
     @classmethod

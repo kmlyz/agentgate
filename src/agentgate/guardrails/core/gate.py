@@ -1,10 +1,17 @@
 """Universal Human-in-the-Loop Approval Gate state machine with atomic persistence."""
 
 import json
+import time
 import uuid
 from pathlib import Path
 from typing import Any
 
+from agentgate.guardrails.core.gate_security_fingerprint import (
+    FingerprintSecurityGate,
+)
+from agentgate.guardrails.core.gate_security_token import (
+    TokenSecurityGate,
+)
 from agentgate.guardrails.core.models import (
     BaseProposal,
     ProposalRecord,
@@ -96,15 +103,23 @@ class ApprovalGate:
                 operator_id=operator_id,
             )
 
-    def submit_proposal(self, proposal: BaseProposal | Any) -> ProposalRecord:
-        """Enqueue a proposal into PENDING_APPROVAL state."""
+    def submit_proposal(
+        self,
+        proposal: BaseProposal | Any,
+        repo_path: str = ".",
+    ) -> ProposalRecord:
+        """Enqueue a proposal into PENDING_APPROVAL state with state fingerprint and payload digest."""
         proposal_id = f"prop_{uuid.uuid4().hex[:8]}"
         rendered = proposal.render_message() if hasattr(proposal, "render_message") else str(proposal)
+        payload_digest = TokenSecurityGate.compute_payload_digest(proposal)
+        state_fp = FingerprintSecurityGate.capture_fingerprint(repo_path)
         record = ProposalRecord(
             proposal_id=proposal_id,
             proposal=proposal,
             rendered_message=rendered,
             status=ProposalStatus.PENDING_APPROVAL,
+            payload_sha256=payload_digest,
+            state_fingerprint=state_fp,
         )
         self._registry[proposal_id] = record
         self._save_to_disk()
@@ -114,25 +129,56 @@ class ApprovalGate:
         self._record_audit(
             proposal_id=proposal_id,
             entry_type="proposal_created",
-            payload=payload_dump,
+            payload={
+                "data": payload_dump,
+                "payload_sha256": payload_digest,
+                "state_fingerprint": state_fp,
+            },
             domain=domain,
         )
         return record
 
     stage = submit_proposal
 
-    def approve(self, proposal_id: str, operator_id: str | None = None) -> ProposalRecord:
-        """Transitions proposal to APPROVED state."""
+    def approve(
+        self,
+        proposal_id: str,
+        operator_id: str | None = None,
+        secret: str | None = None,
+        ttl_seconds: float = 1800.0,
+    ) -> ProposalRecord:
+        """Transitions proposal to APPROVED state and issues cryptographic single-use token."""
         record = self._get_record(proposal_id)
         if record.status != ProposalStatus.PENDING_APPROVAL:
             raise ValueError(f"Proposal '{proposal_id}' cannot be approved from status '{record.status}'.")
+
+        payload_digest = record.payload_sha256 or TokenSecurityGate.compute_payload_digest(record.proposal)
+        state_fp = record.state_fingerprint or FingerprintSecurityGate.capture_fingerprint()
+
+        signed_token = TokenSecurityGate.issue_approval_token(
+            proposal_id=proposal_id,
+            payload_sha256=payload_digest,
+            state_fingerprint=state_fp,
+            ttl_seconds=ttl_seconds,
+            secret=secret,
+        )
+
         record.status = ProposalStatus.APPROVED
+        record.approval_token = TokenSecurityGate.serialize_token(signed_token)
+        record.expires_at = signed_token.expires_at
+        record.nonce = signed_token.nonce
+
         self._save_to_disk()
         domain = self._resolve_domain(record.proposal)
         self._record_audit(
             proposal_id=proposal_id,
             entry_type="operator_approved",
-            payload={"rendered_message": record.rendered_message},
+            payload={
+                "rendered_message": record.rendered_message,
+                "payload_sha256": payload_digest,
+                "state_fingerprint": state_fp,
+                "expires_at": record.expires_at,
+            },
             operator_id=operator_id,
             domain=domain,
         )
@@ -161,21 +207,47 @@ class ApprovalGate:
         )
         return record
 
-    def mark_executed(self, proposal_id: str, operator_id: str | None = None) -> ProposalRecord:
-        """Transitions proposal to EXECUTED state.
-
-        Strictly enforces that the proposal was previously APPROVED.
-        """
+    def mark_executed(
+        self,
+        proposal_id: str,
+        operator_id: str | None = None,
+        token: str | None = None,
+        secret: str | None = None,
+        verify_environment: bool = False,
+        repo_path: str = ".",
+    ) -> ProposalRecord:
+        """Transitions proposal to EXECUTED state with anti-replay, parameter tampering, and drift checks."""
         record = self._get_record(proposal_id)
+        if record.consumed_at is not None:
+            raise ValueError(f"E_TOKEN_REPLAY: Proposal '{proposal_id}' approval token was already consumed at {record.consumed_at}.")
+
         if record.status != ProposalStatus.APPROVED:
             raise ValueError(f"Proposal '{proposal_id}' cannot be executed without prior APPROVAL.")
+
+        token_to_verify = token or record.approval_token
+        if token_to_verify:
+            current_digest = TokenSecurityGate.compute_payload_digest(record.proposal)
+            current_fp = FingerprintSecurityGate.capture_fingerprint(repo_path) if verify_environment else (record.state_fingerprint or "")
+            expected_fp = current_fp if verify_environment else (record.state_fingerprint or "")
+
+            is_valid, reason = TokenSecurityGate.verify_approval_token(
+                token=token_to_verify,
+                expected_proposal_id=proposal_id,
+                expected_payload_sha256=current_digest,
+                expected_state_fingerprint=expected_fp,
+                secret=secret,
+            )
+            if not is_valid:
+                raise ValueError(f"Execution rejected: {reason}")
+
+        record.consumed_at = time.time()
         record.status = ProposalStatus.EXECUTED
         self._save_to_disk()
         domain = self._resolve_domain(record.proposal)
         self._record_audit(
             proposal_id=proposal_id,
             entry_type="mutation_executed",
-            payload={"rendered_message": record.rendered_message},
+            payload={"rendered_message": record.rendered_message, "consumed_at": record.consumed_at},
             operator_id=operator_id,
             domain=domain,
         )
@@ -223,6 +295,12 @@ class ApprovalGate:
                     rendered_message=data["rendered_message"],
                     status=ProposalStatus(data["status"]),
                     rejection_reason=data.get("rejection_reason"),
+                    payload_sha256=data.get("payload_sha256"),
+                    state_fingerprint=data.get("state_fingerprint"),
+                    approval_token=data.get("approval_token"),
+                    expires_at=data.get("expires_at"),
+                    consumed_at=data.get("consumed_at"),
+                    nonce=data.get("nonce"),
                 )
         except (json.JSONDecodeError, KeyError, ValueError, OSError):
             # Corrupted or unreadable state falls back safely to empty memory
@@ -242,6 +320,12 @@ class ApprovalGate:
                     "rendered_message": rec.rendered_message,
                     "status": rec.status.value if hasattr(rec.status, "value") else str(rec.status),
                     "rejection_reason": rec.rejection_reason,
+                    "payload_sha256": rec.payload_sha256,
+                    "state_fingerprint": rec.state_fingerprint,
+                    "approval_token": rec.approval_token,
+                    "expires_at": rec.expires_at,
+                    "consumed_at": rec.consumed_at,
+                    "nonce": rec.nonce,
                 }
             temp_path = self._storage_path.with_suffix(".tmp_atomic")
             with open(temp_path, "w", encoding="utf-8") as f:
