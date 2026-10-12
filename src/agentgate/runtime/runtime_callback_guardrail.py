@@ -49,6 +49,14 @@ DEFAULT_MUTATION_TOOLS: set[str] = {
     "execute_approved_proposal",
 }
 
+# Isolated approval primitives physically inaccessible to autonomous models
+ISOLATED_APPROVAL_TOOLS: set[str] = {
+    "approve_proposal",
+    "reject_proposal",
+    "gate_approve",
+    "gate_reject",
+}
+
 
 def _resolve_tool_name(tool: Any) -> str:
     """Deterministically extracts tool identifier from tool object or name string."""
@@ -135,6 +143,17 @@ class RuntimeGuardrailToolCallback:
         """Intercept and evaluate tool calls synchronously or within ADK hooks."""
         tool_name = _resolve_tool_name(tool)
 
+        # 0. Check if tool is an isolated out-of-band approval primitive
+        if tool_name in ISOLATED_APPROVAL_TOOLS:
+            return {
+                "status": "blocked",
+                "error": (
+                    f"E_PERM: Tool '{tool_name}' is an isolated approval endpoint out-of-band. "
+                    "Autonomous agents are physically prohibited from self-approving proposals."
+                ),
+                "tool_name": tool_name,
+            }
+
         # 1. Check if tool is a recognized proposal generator
         if tool_name in self.proposal_tool_map:
             schema = self.proposal_tool_map[tool_name]
@@ -156,11 +175,14 @@ class RuntimeGuardrailToolCallback:
             return {
                 "status": "pending_approval",
                 "proposal_id": record.proposal_id,
+                "staged_receipt_id": f"rcpt_{record.proposal_id}",
+                "state_fingerprint": record.state_fingerprint,
                 "rendered_message": record.rendered_message,
                 "tool_name": tool_name,
                 "message": (
                     f"PROPOSAL SUBMITTED: Proposal ID '{record.proposal_id}' staged "
-                    f"in ApprovalGate (Status: PENDING_APPROVAL). Awaiting human operator approval."
+                    f"in ApprovalGate (Status: PENDING_APPROVAL). Staged out-of-band for human operator approval. "
+                    f"Execution of this branch is locked. Independent subtasks may continue."
                 ),
             }
 
@@ -198,9 +220,25 @@ class RuntimeGuardrailToolCallback:
                 }
 
             # Proposal is officially APPROVED -> Mark executed and run deterministically
-            self.approval_gate.mark_executed(proposal_id)
             repo_path = args.get("repo_path", ".")
             dry_run = args.get("dry_run", False)
+            token = args.get("token")
+            verify_environment = args.get("verify_environment", False)
+
+            try:
+                self.approval_gate.mark_executed(
+                    proposal_id,
+                    token=token,
+                    verify_environment=verify_environment,
+                    repo_path=repo_path,
+                )
+            except ValueError as exc:
+                return {
+                    "status": "blocked",
+                    "error": f"EXECUTION_BLOCKED: Security validation failed: {exc}",
+                    "proposal_id": proposal_id,
+                    "tool_name": tool_name,
+                }
 
             success, output = self._execute_proposal_payload(
                 record, repo_path=repo_path, dry_run=dry_run
