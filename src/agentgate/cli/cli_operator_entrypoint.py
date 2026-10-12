@@ -124,7 +124,7 @@ def _create_mock_spec_fallback(
 
 
 @click.group(name="agentgate")
-@click.version_option(version="0.1.0", prog_name="AgentGate")
+@click.version_option(version="0.5.0", prog_name="AgentGate")
 def cli() -> None:
     """AgentGate: Deterministic Guardrails and HITL Operations."""
 

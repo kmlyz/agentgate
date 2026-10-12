@@ -1,6 +1,6 @@
 [project]
 name = "agentgate"
-version = "0.1.0"
+version = "0.5.0"
 description = "Deterministic execution gate and audit ledger for LLM tool calls"
 readme = "README.md"
 requires-python = ">=3.12"
