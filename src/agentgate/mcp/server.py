@@ -40,10 +40,23 @@ from agentgate.reasoning import (
 )
 from blueprints.verified_github_agent.agent import TaskSpecification
 
-# Initialize MCPServer (MCP SDK v2)
+# Initialize MCPServer instances
+# 1. Universal compliance server (contains all tools for compliance & backward compat)
 mcp = MCPServer(
     name="agentgate-guardrails",
     instructions="Deterministic Guardrail MCP Server enforcing Conventional Commits, git guardrails, and HITL approval.",
+)
+
+# 2. Agent session server (proposals and inspection ONLY - approval primitives physically omitted)
+agent_mcp = MCPServer(
+    name="agentgate-agent",
+    instructions="Autonomous Agent Guardrail MCP Server with physical out-of-band approval isolation.",
+)
+
+# 3. Operator server (administrative approval and execution primitives)
+operator_mcp = MCPServer(
+    name="agentgate-operator",
+    instructions="Operator MCP Server with administrative approval and execution capabilities.",
 )
 
 # Global in-memory approval gate instance and domain adapters
@@ -69,7 +82,22 @@ def set_reasoning_engine(engine: BaseReasoningEngine | None) -> None:
     _reasoning_engine = engine
 
 
-@mcp.tool()
+def _register_agent_tool(fn: Any) -> Any:
+    """Register tool on standard mcp, agent_mcp, and operator_mcp instances."""
+    mcp.tool()(fn)
+    agent_mcp.tool()(fn)
+    operator_mcp.tool()(fn)
+    return fn
+
+
+def _register_operator_tool(fn: Any) -> Any:
+    """Register tool on operator_mcp and mcp, but PHYSICALLY EXCLUDE from agent_mcp."""
+    mcp.tool()(fn)
+    operator_mcp.tool()(fn)
+    return fn
+
+
+@_register_agent_tool
 def propose_branch(
     branch_type: BranchType,
     branch_name: str,
@@ -124,7 +152,7 @@ def propose_branch(
         return f"INTERNAL ERROR: {exc}"
 
 
-@mcp.tool()
+@_register_agent_tool
 def propose_commit(
     branch: str,
     commit_type: CommitType,
@@ -177,7 +205,7 @@ def propose_commit(
         return f"INTERNAL ERROR: {exc}"
 
 
-@mcp.tool()
+@_register_agent_tool
 def propose_pr(
     title_type: CommitType,
     title_scope: str,
@@ -245,7 +273,7 @@ def propose_pr(
         return f"INTERNAL ERROR: {exc}"
 
 
-@mcp.tool()
+@_register_agent_tool
 def propose_workflow(
     prompt: str,
     base_branch: str = "main",
@@ -333,7 +361,7 @@ def propose_workflow(
     )
 
 
-@mcp.tool()
+@_register_agent_tool
 def propose_sql_migration(
     operation_type: str,
     target_table: str,
@@ -390,7 +418,7 @@ def propose_sql_migration(
     )
 
 
-@mcp.tool()
+@_register_agent_tool
 def list_pending_proposals() -> str:
     """List all proposals currently awaiting operator approval."""
     pending = approval_gate.list_pending()
@@ -426,7 +454,7 @@ def list_pending_proposals() -> str:
     return "\n".join(lines)
 
 
-@mcp.tool()
+@_register_operator_tool
 def approve_proposal(proposal_id: str) -> str:
     """Approve a pending proposal (Human-in-the-Loop action).
 
@@ -448,7 +476,7 @@ def approve_proposal(proposal_id: str) -> str:
         return f"ERROR: {exc}"
 
 
-@mcp.tool()
+@_register_operator_tool
 def reject_proposal(proposal_id: str, reason: str = "Rejected by operator") -> str:
     """Reject a pending proposal.
 
@@ -470,11 +498,13 @@ def reject_proposal(proposal_id: str, reason: str = "Rejected by operator") -> s
         return f"ERROR: {exc}"
 
 
-@mcp.tool()
+@_register_operator_tool
 def execute_approved_proposal(
     proposal_id: str,
     repo_path: str = ".",
     dry_run: bool = False,
+    token: str | None = None,
+    verify_environment: bool = False,
 ) -> str:
     """Execute Git mutation for an APPROVED proposal.
 
@@ -522,7 +552,16 @@ def execute_approved_proposal(
         return f"{action_name} FAILED:\n{output}"
 
     # Only mark executed once operation has succeeded
-    approval_gate.mark_executed(proposal_id)
+    try:
+        approval_gate.mark_executed(
+            proposal_id,
+            token=token,
+            verify_environment=verify_environment,
+            repo_path=repo_path,
+        )
+    except ValueError as exc:
+        return f"EXECUTION BLOCKED (SECURITY VIOLATION): {exc}"
+
     return (
         f"{action_name} EXECUTED DETERMINISTICALLY\n"
         f"Proposal ID: {record.proposal_id}\n"
@@ -541,18 +580,22 @@ def _enforce_strict_tool_models(server: MCPServer) -> None:
 
 
 _enforce_strict_tool_models(mcp)
+_enforce_strict_tool_models(agent_mcp)
+_enforce_strict_tool_models(operator_mcp)
 
 
 def run_server(
     transport: str = "stdio",
     host: str = "0.0.0.0",
     port: int = 8000,
+    role: str = "agent",
 ) -> None:
-    """Run MCP server with specified transport protocol and network bindings."""
+    """Run MCP server with specified transport protocol, role profile, and network bindings."""
+    target_server = operator_mcp if role == "operator" else mcp
     if transport == "stdio":
-        mcp.run(transport="stdio")
+        target_server.run(transport="stdio")
     elif transport in ("sse", "streamable-http"):
-        mcp.run(transport=transport, host=host, port=port)  # type: ignore[arg-type]
+        target_server.run(transport=transport, host=host, port=port)  # type: ignore[arg-type]
     else:
         raise ValueError(
             f"Unsupported transport '{transport}'. Must be one of: stdio, sse, streamable-http."
@@ -564,6 +607,12 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="agentgate-mcp",
         description="AgentGate Guardrails MCP Server enforcing Conventional Commits, SQL inspection, and HITL approval.",
+    )
+    parser.add_argument(
+        "--role",
+        choices=["agent", "operator"],
+        default=os.getenv("AGENTGATE_ROLE", "agent"),
+        help="Access role profile (default: agent, or $AGENTGATE_ROLE)",
     )
     parser.add_argument(
         "--transport",
@@ -583,7 +632,14 @@ def main(argv: list[str] | None = None) -> None:
         help="Bind port for SSE/HTTP (default: 8000, or $PORT)",
     )
     args = parser.parse_args(argv if argv is not None else sys.argv[1:])
-    run_server(transport=args.transport, host=args.host, port=args.port)
+    call_kwargs: dict[str, Any] = {
+        "transport": args.transport,
+        "host": args.host,
+        "port": args.port,
+    }
+    if args.role != "agent":
+        call_kwargs["role"] = args.role
+    run_server(**call_kwargs)
 
 
 if __name__ == "__main__":
