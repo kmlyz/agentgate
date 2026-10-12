@@ -7,8 +7,7 @@ This specification defines the highest-precedence local policies, architectural 
 - **Propose Pattern:** Direct mutating operations (Git commit/push, file deletion, database mutations) are forbidden. Tools must expose `propose_*` interfaces that stage mutations into deterministic intermediate models.
 - **Human-in-the-Loop (HITL) Gate:** All destructive or external-facing mutations require transition through an explicit `PENDING_APPROVAL` gate state before execution.
 
-## 2. Workspace Isolation & Nomenclature
-- **Strict Notes Isolation:** The `notes/` directory contains private local developer drafts and is strictly out-of-scope. Automated agents must NEVER read, modify, translate, delete, or stage files within `notes/`.
+## 2. Nomenclature & Style
 - **Nomenclature Invariants:** The canonical package is `agentgate`. The commercial starter kit is `agentgate-pro` (in prose: "AgentGate Pro"). The legacy words "agent-foundry" and "enterprise" are strictly prohibited across all code, tests, and public docs.
 - **Tone & Style:** All public documentation, CLI output, and docstrings must use objective, neutral, zero-fluff systems engineering English (HashiCorp/SQLite style). Promotional or celebratory phrasing is forbidden.
 
