@@ -66,7 +66,7 @@ gate execute prop_a1b2c3d4 --token <approval_token>
 
 - **Google Agent Development Kit (ADK):** Interception via `before_tool_callback`.
 - **Model Context Protocol (MCP):** FastMCP server with separated `agent` and `operator` transport profiles.
-- **Pydantic v2:** Parameter validation via `extra="forbid"` models and deterministic field constraints.
+- **Pydantic:** Parameter validation via `extra="forbid"` models and deterministic field constraints.
 - **sqlglot:** Multi-dialect SQL AST parser and tautology analyzer.
 
 ## Verification

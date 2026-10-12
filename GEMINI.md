@@ -13,9 +13,9 @@ This specification defines the highest-precedence local policies, architectural 
 
 ## 3. Engineering & Code Standards
 - **Python Ecosystem:** Python 3.12 exclusively; dependency management restricted to Astral `uv` (`uv run`, `uv add`).
-- **Frameworks:** Google ADK 2.0 and Model Context Protocol (MCP 2.x).
-- **Type Safety:** Strict Pydantic v2 validation (`BaseModel`, `field_validator`, `Field(pattern=...)`, `extra="forbid"`).
-- **Verification Invariant:** Code changes must maintain 230 passing tests (`uv run pytest`) and zero linter warnings (`uv run ruff check .`).
+- **Frameworks:** Google ADK and Model Context Protocol (MCP).
+- **Type Safety:** Strict Pydantic validation (`BaseModel`, `field_validator`, `Field(pattern=...)`, `extra="forbid"`).
+- **Verification Invariant:** Code changes must maintain 281 passing tests (`uv run pytest`) and zero linter warnings (`uv run ruff check .`).
 
 ## 4. Scoped Naming & Immutability
 - **Strict Immutability:** Existing tested code, filenames, and import paths must remain intact and functional.

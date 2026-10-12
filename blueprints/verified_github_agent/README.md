@@ -2,7 +2,7 @@
 
 Deterministic Git and GitHub execution guardrails with Human-in-the-Loop (HITL) approval gates.
 
-Intercepts LLM tool calls to prevent arbitrary commits, unauthorized branch mutations, or malformed pull requests by binding all side-effecting operations to strictly-typed Pydantic v2 schemas and the `ApprovalGate` state machine.
+Intercepts LLM tool calls to prevent arbitrary commits, unauthorized branch mutations, or malformed pull requests by binding all side-effecting operations to strictly-typed Pydantic schemas and the `ApprovalGate` state machine.
 
 ---
 
@@ -133,7 +133,7 @@ for prop in proposals:
 
 ---
 
-## Google ADK 2.0 & Cloud Run Runtime
+## Google ADK & Cloud Run Runtime
 
 ### Running with Google ADK `root_agent`
 
@@ -184,7 +184,7 @@ docker run -p 8080:8080 -e PORT=8080 -e GEMINI_API_KEY=$GEMINI_API_KEY verified-
 
 ## Schema Contracts
 
-All schemas inherit from `BaseProposal` and enforce Pydantic v2 `extra="forbid"`, preventing unauthorized payload injection:
+All schemas inherit from `BaseProposal` and enforce Pydantic `extra="forbid"`, preventing unauthorized payload injection:
 
 - `BranchProposal`: Category prefix (`BranchType`), regex-validated slug, base branch, and optional ticket ID.
 - `CommitProposal`: Conventional Commit type (`CommitType`), scope regex, imperative summary validator, and optional ticket ID.
